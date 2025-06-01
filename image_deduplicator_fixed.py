@@ -87,7 +87,8 @@ def process_images(source_dir, target_dir, use_content_hash=True):
 
     # 收集所有图片信息，包括源目录和目标目录
     all_images = {}  # filename -> [{'path': str, 'size': int, 'hash': str, 'content_hash': str}]
-      # 扫描目标目录
+    
+    # 扫描目标目录
     logger.info(f"正在扫描目标目录: {target_dir}")
     target_count = 0
     for root, dirs, files in os.walk(target_dir):
@@ -114,7 +115,8 @@ def process_images(source_dir, target_dir, use_content_hash=True):
                 })
     
     logger.info(f"目标目录中找到 {target_count} 张图片")
-      # 扫描源目录
+    
+    # 扫描源目录
     logger.info(f"正在扫描源目录: {source_dir}")
     source_count = 0
     processed_files = 0
@@ -167,7 +169,8 @@ def process_images(source_dir, target_dir, use_content_hash=True):
                         'size': file_size,
                         'hash': file_hash,
                         'content_hash': content_hash,
-                        'is_target': False                    })
+                        'is_target': False
+                    })
                 else:
                     logger.debug(f"跳过非有效图片文件: {file_path}")
     
@@ -192,6 +195,7 @@ def process_images(source_dir, target_dir, use_content_hash=True):
                 if content_hash not in hash_groups:
                     hash_groups[content_hash] = []
                 hash_groups[content_hash].append(file_info)
+    
     # 处理每个哈希组
     copied_count = 0
     skipped_count = 0
@@ -237,7 +241,8 @@ def process_images(source_dir, target_dir, use_content_hash=True):
             
             # 检查最大文件是否已经在目标目录中
             target_files = [f for f in unique_files if f['is_target']]
-            source_files = [f for f in unique_files if not f['is_target']]            
+            source_files = [f for f in unique_files if not f['is_target']]
+            
             if largest_file['is_target']:
                 # 最大文件已在目标目录中
                 # 删除目标目录中其他较小的重复文件
@@ -250,7 +255,8 @@ def process_images(source_dir, target_dir, use_content_hash=True):
                             processed_files.add(file_info['path'])
                         except Exception as e:
                             logger.error(f"删除文件失败: {file_info['path']}, 错误: {e}")
-                  # 跳过源目录中的重复文件
+                
+                # 跳过源目录中的重复文件
                 for file_info in source_files:
                     if file_info['path'] not in processed_files:
                         logger.debug(f"跳过重复文件: {file_info['path']} ({file_info['size']} bytes)")
@@ -287,7 +293,8 @@ def process_images(source_dir, target_dir, use_content_hash=True):
                         processed_files.add(largest_file['path'])
                     except Exception as e:
                         logger.error(f"复制文件失败: {largest_file['path']}, 错误: {e}")
-                  # 跳过源目录中其他较小的重复文件
+                
+                # 跳过源目录中其他较小的重复文件
                 for file_info in source_files:
                     if file_info != largest_file and file_info['path'] not in processed_files:
                         logger.debug(f"跳过较小的重复文件: {file_info['path']} ({file_info['size']} bytes)")
@@ -299,51 +306,29 @@ def process_images(source_dir, target_dir, use_content_hash=True):
 
 def main():
     parser = argparse.ArgumentParser(description='图片去重和整理工具')
-    parser.add_argument('--source', '-s', required=True, nargs='+', help='源图片目录（可指定多个）')
-    parser.add_argument('--target', '-t', required=True, nargs='+', help='目标图片目录（可指定多个）')
+    parser.add_argument('--source', '-s', required=True, help='源图片目录')
+    parser.add_argument('--target', '-t', required=True, help='目标图片目录')
     parser.add_argument('--fast', action='store_true', help='使用快速模式（仅文件哈希，不检测内容相似性）')
     
     args = parser.parse_args()
     
     logger.info("=== 图片去重和整理工具启动 ===")
-    logger.info(f"源目录: {', '.join(args.source)}")
-    logger.info(f"目标目录: {', '.join(args.target)}")
+    logger.info(f"源目录: {args.source}")
+    logger.info(f"目标目录: {args.target}")
     logger.info(f"模式: {'快速模式' if args.fast else '精确模式(包含内容比较)'}")
     
-    # 检查所有源目录是否存在
-    for source_dir in args.source:
-        if not os.path.exists(source_dir):
-            logger.error(f"源目录不存在: {source_dir}")
-            return 1
-    
-    # 如果有多个目标目录，确保数量匹配或只有一个目标目录
-    if len(args.target) > 1 and len(args.target) != len(args.source):
-        logger.error("如果指定多个目标目录，数量必须与源目录匹配，或者只指定一个目标目录")
+    if not os.path.exists(args.source):
+        logger.error(f"源目录不存在: {args.source}")
         return 1
     
-    # 处理多个源目录和目标目录的组合
-    total_copied = 0
-    total_skipped = 0
-    total_deleted = 0
+    copied, skipped, deleted = process_images(args.source, args.target, not args.fast)
     
-    for i, source_dir in enumerate(args.source):
-        # 确定对应的目标目录
-        if len(args.target) == 1:
-            target_dir = args.target[0]
-        else:
-            target_dir = args.target[i]
-        
-        logger.info(f"\n处理第 {i+1}/{len(args.source)} 个任务: {source_dir} -> {target_dir}")
-        copied, skipped, deleted = process_images(source_dir, target_dir, not args.fast)
-        total_copied += copied
-        total_skipped += skipped
-        total_deleted += deleted
     logger.info("=== 图片去重和整理工具完成 ===")
-    logger.info(f"总计复制了 {total_copied} 张新图片")
-    logger.info(f"总计跳过了 {total_skipped} 张重复图片")
-    logger.info(f"总计删除了 {total_deleted} 张重复文件")
+    logger.info(f"复制了 {copied} 张新图片")
+    logger.info(f"跳过了 {skipped} 张重复图片")
+    logger.info(f"删除了 {deleted} 张重复文件")
     
     return 0
 
 if __name__ == "__main__":
-    sys.exit(main()) 
+    sys.exit(main())

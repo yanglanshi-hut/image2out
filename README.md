@@ -42,8 +42,14 @@ chmod +x image_deduplicator.py
 ### 基本用法
 
 ```bash
-# 基本使用方法（使用精确模式，包含内容比较）
+# 基本使用方法（单个源目录到单个目标目录）
 python3 image_deduplicator.py --source /volume1/photo/test --target /volume1/photo/images
+
+# 多个源目录到同一个目标目录
+python3 image_deduplicator.py --source /volume1/photo/test1 /volume1/photo/test2 /volume1/photo/test3 --target /volume1/photo/images
+
+# 多个源目录到对应的多个目标目录（一对一关系）
+python3 image_deduplicator.py --source /volume1/photo/test1 /volume1/photo/test2 --target /volume1/photo/images1 /volume1/photo/images2
 
 # 使用快速模式（仅文件哈希比较，速度更快）
 python3 image_deduplicator.py --source /volume1/photo/test --target /volume1/photo/images --fast
@@ -51,8 +57,8 @@ python3 image_deduplicator.py --source /volume1/photo/test --target /volume1/pho
 
 ### 参数说明
 
-- `--source` / `-s`: 源图片目录路径
-- `--target` / `-t`: 目标图片目录路径  
+- `--source` / `-s`: 源图片目录路径（可指定多个，用空格分隔）
+- `--target` / `-t`: 目标图片目录路径（可指定多个，用空格分隔。如果指定多个，数量必须与源目录匹配，或者只指定一个目标目录）
 - `--fast`: 可选，启用快速模式（仅使用文件哈希，不进行内容比较）
 
 ### 工作原理
@@ -74,7 +80,11 @@ python3 image_deduplicator.py --source /volume1/photo/test --target /volume1/pho
 6. 在"任务设置"选项卡的"运行命令"框中输入：
 
 ```bash
+# 单个源目录的示例
 cd /volume1/photo/scripts/ && python3 image_deduplicator.py --source /volume1/photo/test --target /volume1/photo/images --fast
+
+# 多个源目录的示例
+cd /volume1/photo/scripts/ && python3 image_deduplicator.py --source /volume1/photo/test1 /volume1/photo/test2 /volume1/photo/test3 --target /volume1/photo/images --fast
 ```
 
 7. 点击"确定"保存任务
@@ -94,24 +104,47 @@ cd /volume1/photo/scripts/ && python3 image_deduplicator.py --source /volume1/ph
 假设您有以下目录结构：
 ```
 /volume1/photo/
-├── test/           # 源目录，包含新下载的图片
-└── images/         # 目标目录，保存整理后的图片
+├── test1/          # 源目录1，包含新下载的图片
+├── test2/          # 源目录2，包含手机导入的图片
+├── test3/          # 源目录3，包含相机导入的图片
+├── images/         # 目标目录，保存整理后的图片
+├── backup1/        # 备份目录1
+└── backup2/        # 备份目录2
 ```
 
-运行命令：
+**示例1：多个源目录合并到一个目标目录**
 ```bash
-python3 image_deduplicator.py --source /volume1/photo/test --target /volume1/photo/images --fast
+python3 image_deduplicator.py --source /volume1/photo/test1 /volume1/photo/test2 /volume1/photo/test3 --target /volume1/photo/images --fast
+```
+
+**示例2：源目录与目标目录一对一处理**
+```bash
+python3 image_deduplicator.py --source /volume1/photo/test1 /volume1/photo/test2 --target /volume1/photo/backup1 /volume1/photo/backup2 --fast
 ```
 
 预期输出：
 ```
 2025-06-01 14:54:39,470 - INFO - === 图片去重和整理工具启动 ===
-2025-06-01 14:54:39,470 - INFO - 源目录: /volume1/photo/test
+2025-06-01 14:54:39,470 - INFO - 源目录: /volume1/photo/test1, /volume1/photo/test2, /volume1/photo/test3
 2025-06-01 14:54:39,470 - INFO - 目标目录: /volume1/photo/images
 2025-06-01 14:54:39,470 - INFO - 模式: 快速模式
-2025-06-01 14:54:39,471 - INFO - 目标目录中已有 0 张图片
-2025-06-01 14:54:39,471 - INFO - 源目录中找到 12 张图片
-2025-06-01 14:54:40,883 - INFO - 处理完成! 源目录: 12 张, 复制: 8, 替换: 0, 跳过: 4
+
+处理第 1/3 个任务: /volume1/photo/test1 -> /volume1/photo/images
+2025-06-01 14:54:39,471 - INFO - 源目录中找到 15 张图片
+2025-06-01 14:54:40,883 - INFO - 处理完成! 源目录: 15 张, 复制: 10, 替换: 0, 跳过: 5
+
+处理第 2/3 个任务: /volume1/photo/test2 -> /volume1/photo/images
+2025-06-01 14:54:41,471 - INFO - 源目录中找到 8 张图片
+2025-06-01 14:54:42,883 - INFO - 处理完成! 源目录: 8 张, 复制: 3, 替换: 1, 跳过: 4
+
+处理第 3/3 个任务: /volume1/photo/test3 -> /volume1/photo/images
+2025-06-01 14:54:43,471 - INFO - 源目录中找到 12 张图片
+2025-06-01 14:54:44,883 - INFO - 处理完成! 源目录: 12 张, 复制: 5, 替换: 2, 跳过: 5
+
+2025-06-01 14:54:45,470 - INFO - === 图片去重和整理工具完成 ===
+2025-06-01 14:54:45,470 - INFO - 总计复制了 18 张新图片
+2025-06-01 14:54:45,470 - INFO - 总计跳过了 14 张重复图片
+2025-06-01 14:54:45,470 - INFO - 总计删除了 3 张重复文件
 ```
 
 ## 注意事项
