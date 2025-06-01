@@ -60,141 +60,137 @@ def is_image_file(file_path):
     _, ext = os.path.splitext(file_path.lower())
     return ext in image_extensions
 
+def should_skip_directory(dir_path):
+    """判断是否应该跳过该目录"""
+    skip_dirs = {'@eaDir', '.DS_Store', 'Thumbs.db', '@Recycle', '#recycle', '.thumbnail'}
+    dir_name = os.path.basename(dir_path)
+    return dir_name in skip_dirs or dir_name.startswith('.')
+
 def process_images(source_dir, target_dir, use_content_hash=True):
     """
-    处理图片：找出所有图片，去重，并移动到目标目录
-    保留文件名，如果重复则保留文件大小最大的那张
+    处理图片：找出所有图片，去重，并保留最大的文件
+    完全重写以修复逻辑问题
     """
     if not os.path.exists(target_dir):
         os.makedirs(target_dir)
         logger.info(f"创建目标目录: {target_dir}")
 
-    # 用字典来跟踪已有图片，存储哈希值到文件路径和大小的映射
-    existing_files = {}  # hash -> (file_path, file_size, is_in_target)
+    # 收集所有图片信息，包括源目录和目标目录
+    all_images = {}  # filename -> [{'path': str, 'size': int, 'hash': str, 'content_hash': str}]
     
-    # 首先加载目标目录中已有的图片哈希值
-    logger.info(f"正在加载目标目录中的现有图片: {target_dir}")
-    target_image_count = 0
-    for root, _, files in os.walk(target_dir):
+    # 扫描目标目录
+    logger.info(f"正在扫描目标目录: {target_dir}")
+    target_count = 0
+    for root, dirs, files in os.walk(target_dir):
+        # 跳过系统目录
+        dirs[:] = [d for d in dirs if not should_skip_directory(os.path.join(root, d))]
+        
         for filename in files:
             if is_image_file(filename):
-                target_image_count += 1
+                target_count += 1
                 file_path = os.path.join(root, filename)
                 file_hash, content_hash = calculate_image_hash(file_path)
                 file_size = os.path.getsize(file_path)
                 
-                if file_hash:
-                    existing_files[file_hash] = (file_path, file_size, True)
-                if use_content_hash and content_hash:
-                    existing_files[content_hash] = (file_path, file_size, True)
-    
-    logger.info(f"目标目录中已有 {target_image_count} 张图片")
-    
-    # 收集源目录中的所有图片信息
-    source_images = []
-    logger.info(f"正在扫描源目录: {source_dir}")
-    for root, _, files in os.walk(source_dir):
-        for filename in files:
-            if is_image_file(filename):
-                source_path = os.path.join(root, filename)
-                file_hash, content_hash = calculate_image_hash(source_path)
-                file_size = os.path.getsize(source_path)
+                base_filename = os.path.basename(filename)
+                if base_filename not in all_images:
+                    all_images[base_filename] = []
                 
-                source_images.append({
-                    'path': source_path,
-                    'filename': filename,
-                    'file_hash': file_hash,
+                all_images[base_filename].append({
+                    'path': file_path,
+                    'size': file_size,
+                    'hash': file_hash,
                     'content_hash': content_hash,
-                    'size': file_size
+                    'is_target': True
                 })
     
-    total_images = len(source_images)
-    logger.info(f"源目录中找到 {total_images} 张图片")
+    logger.info(f"目标目录中找到 {target_count} 张图片")
     
-    # 处理源目录中的图片
-    copied_images = 0
-    skipped_images = 0
-    replaced_images = 0
-    
-    logger.info(f"开始处理源目录图片...")
-    for i, img_info in enumerate(source_images, 1):
-        source_path = img_info['path']
-        filename = img_info['filename']
-        file_hash = img_info['file_hash']
-        content_hash = img_info['content_hash']
-        file_size = img_info['size']
+    # 扫描源目录
+    logger.info(f"正在扫描源目录: {source_dir}")
+    source_count = 0
+    for root, dirs, files in os.walk(source_dir):
+        # 跳过系统目录
+        dirs[:] = [d for d in dirs if not should_skip_directory(os.path.join(root, d))]
         
-        # 检查是否为重复图片
-        duplicate_hash = None
-        if file_hash and file_hash in existing_files:
-            duplicate_hash = file_hash
-        elif use_content_hash and content_hash and content_hash in existing_files:
-            duplicate_hash = content_hash
-        
-        if duplicate_hash:
-            existing_path, existing_size, is_in_target = existing_files[duplicate_hash]
-            
-            # 如果当前文件更大，则替换
-            if file_size > existing_size:
-                if is_in_target:
-                    # 删除目标目录中的旧文件
-                    try:
-                        os.remove(existing_path)
-                        logger.info(f"删除较小的重复文件: {existing_path} ({existing_size} bytes)")
-                    except Exception as e:
-                        logger.error(f"删除文件失败: {existing_path}, 错误: {e}")
-                        continue
+        for filename in files:
+            if is_image_file(filename):
+                source_count += 1
+                file_path = os.path.join(root, filename)
+                file_hash, content_hash = calculate_image_hash(file_path)
+                file_size = os.path.getsize(file_path)
                 
-                # 复制新的更大文件
+                base_filename = os.path.basename(filename)
+                if base_filename not in all_images:
+                    all_images[base_filename] = []
+                
+                all_images[base_filename].append({
+                    'path': file_path,
+                    'size': file_size,
+                    'hash': file_hash,
+                    'content_hash': content_hash,
+                    'is_target': False
+                })
+    
+    logger.info(f"源目录中找到 {source_count} 张图片")
+    
+    # 按文件名分组处理重复项
+    copied_count = 0
+    skipped_count = 0
+    replaced_count = 0
+    
+    for filename, file_list in all_images.items():
+        if len(file_list) == 1:
+            # 只有一个文件，如果在源目录中则复制
+            file_info = file_list[0]
+            if not file_info['is_target']:
                 target_path = os.path.join(target_dir, filename)
-                # 如果目标文件名已存在，添加数字后缀
-                counter = 1
-                while os.path.exists(target_path):
-                    name, ext = os.path.splitext(filename)
-                    target_path = os.path.join(target_dir, f"{name}_{counter}{ext}")
-                    counter += 1
-                
                 try:
-                    shutil.copy2(source_path, target_path)
-                    logger.info(f"替换为更大文件: {source_path} ({file_size} bytes) -> {target_path}")
-                    
-                    # 更新记录
-                    existing_files[duplicate_hash] = (target_path, file_size, True)
-                    replaced_images += 1
+                    shutil.copy2(file_info['path'], target_path)
+                    logger.info(f"复制唯一文件: {file_info['path']} -> {target_path}")
+                    copied_count += 1
                 except Exception as e:
-                    logger.error(f"复制文件时出错: {source_path}, 错误: {e}")
-            else:
-                skipped_images += 1
-                logger.debug(f"跳过较小的重复文件: {source_path} ({file_size} bytes)")
+                    logger.error(f"复制文件失败: {file_info['path']}, 错误: {e}")
         else:
-            # 非重复图片，直接复制
+            # 有多个同名文件，选择最大的
+            largest_file = max(file_list, key=lambda x: x['size'])
             target_path = os.path.join(target_dir, filename)
-            # 如果目标文件名已存在，添加数字后缀
-            counter = 1
-            while os.path.exists(target_path):
-                name, ext = os.path.splitext(filename)
-                target_path = os.path.join(target_dir, f"{name}_{counter}{ext}")
-                counter += 1
             
-            try:
-                shutil.copy2(source_path, target_path)
-                logger.debug(f"已复制: {source_path} -> {target_path}")
+            # 如果最大的文件已经在目标目录中
+            if largest_file['is_target']:
+                # 删除其他较小的文件（如果在目标目录中）
+                for file_info in file_list:
+                    if file_info != largest_file and file_info['is_target']:
+                        try:
+                            os.remove(file_info['path'])
+                            logger.info(f"删除较小的重复文件: {file_info['path']} ({file_info['size']} bytes)")
+                        except Exception as e:
+                            logger.error(f"删除文件失败: {file_info['path']}, 错误: {e}")
+                skipped_count += len([f for f in file_list if not f['is_target']])
+            else:
+                # 最大的文件在源目录中，需要复制
+                # 先删除目标目录中的所有同名文件
+                for file_info in file_list:
+                    if file_info['is_target']:
+                        try:
+                            os.remove(file_info['path'])
+                            logger.info(f"删除较小的重复文件: {file_info['path']} ({file_info['size']} bytes)")
+                        except Exception as e:
+                            logger.error(f"删除文件失败: {file_info['path']}, 错误: {e}")
                 
-                # 更新记录
-                if file_hash:
-                    existing_files[file_hash] = (target_path, file_size, True)
-                if content_hash:
-                    existing_files[content_hash] = (target_path, file_size, True)
+                # 复制最大的文件
+                try:
+                    shutil.copy2(largest_file['path'], target_path)
+                    logger.info(f"复制最大文件: {largest_file['path']} ({largest_file['size']} bytes) -> {target_path}")
+                    replaced_count += 1
+                except Exception as e:
+                    logger.error(f"复制文件失败: {largest_file['path']}, 错误: {e}")
                 
-                copied_images += 1
-            except Exception as e:
-                logger.error(f"复制文件时出错: {source_path}, 错误: {e}")
-        
-        if i % 10 == 0 or i == total_images:
-            logger.info(f"已处理: {i}/{total_images}, 新复制: {copied_images}, 替换: {replaced_images}, 跳过: {skipped_images}")
+                # 统计跳过的文件
+                skipped_count += len([f for f in file_list if f != largest_file and not f['is_target']])
     
-    logger.info(f"处理完成! 总共: {total_images}, 新复制: {copied_images}, 替换: {replaced_images}, 跳过: {skipped_images}")
-    return copied_images + replaced_images, skipped_images
+    logger.info(f"处理完成! 源目录: {source_count} 张, 复制: {copied_count}, 替换: {replaced_count}, 跳过: {skipped_count}")
+    return copied_count + replaced_count, skipped_count
 
 def main():
     parser = argparse.ArgumentParser(description='图片去重和整理工具')
