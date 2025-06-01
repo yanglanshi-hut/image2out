@@ -192,11 +192,11 @@ def process_images(source_dir, target_dir, use_content_hash=True):
                 if content_hash not in hash_groups:
                     hash_groups[content_hash] = []
                 hash_groups[content_hash].append(file_info)
-    
     # 处理每个哈希组
     copied_count = 0
     skipped_count = 0
     replaced_count = 0
+    deleted_count = 0  # 添加删除的重复文件计数
     processed_files = set()  # 避免重复处理同一个文件
     
     for hash_value, file_list in hash_groups.items():
@@ -239,14 +239,14 @@ def process_images(source_dir, target_dir, use_content_hash=True):
             target_files = [f for f in unique_files if f['is_target']]
             source_files = [f for f in unique_files if not f['is_target']]
             
-            if largest_file['is_target']:
-                # 最大文件已在目标目录中
+            if largest_file['is_target']:                # 最大文件已在目标目录中
                 # 删除目标目录中其他较小的重复文件
                 for file_info in target_files:
                     if file_info != largest_file and file_info['path'] not in processed_files:
                         try:
                             os.remove(file_info['path'])
                             logger.info(f"删除较小的重复文件: {file_info['path']} ({file_info['size']} bytes)")
+                            deleted_count += 1  # 增加删除计数
                             processed_files.add(file_info['path'])
                         except Exception as e:
                             logger.error(f"删除文件失败: {file_info['path']}, 错误: {e}")
@@ -257,14 +257,14 @@ def process_images(source_dir, target_dir, use_content_hash=True):
                         logger.debug(f"跳过重复文件: {file_info['path']} ({file_info['size']} bytes)")
                         skipped_count += 1
                         processed_files.add(file_info['path'])
-            else:
-                # 最大文件在源目录中，需要复制并替换
+            else:                # 最大文件在源目录中，需要复制并替换
                 # 删除目标目录中的所有重复文件
                 for file_info in target_files:
                     if file_info['path'] not in processed_files:
                         try:
                             os.remove(file_info['path'])
                             logger.info(f"删除较小的重复文件: {file_info['path']} ({file_info['size']} bytes)")
+                            deleted_count += 1  # 增加删除计数
                             processed_files.add(file_info['path'])
                         except Exception as e:
                             logger.error(f"删除文件失败: {file_info['path']}, 错误: {e}")
@@ -294,9 +294,8 @@ def process_images(source_dir, target_dir, use_content_hash=True):
                         logger.debug(f"跳过较小的重复文件: {file_info['path']} ({file_info['size']} bytes)")
                         skipped_count += 1
                         processed_files.add(file_info['path'])
-    
-    logger.info(f"处理完成! 源目录: {source_count} 张, 复制: {copied_count}, 替换: {replaced_count}, 跳过: {skipped_count}")
-    return copied_count + replaced_count, skipped_count
+        logger.info(f"处理完成! 源目录: {source_count} 张, 复制: {copied_count}, 替换: {replaced_count}, 跳过: {skipped_count}, 删除重复: {deleted_count}")
+    return copied_count + replaced_count, skipped_count, deleted_count
 
 def main():
     parser = argparse.ArgumentParser(description='图片去重和整理工具')
@@ -310,16 +309,16 @@ def main():
     logger.info(f"源目录: {args.source}")
     logger.info(f"目标目录: {args.target}")
     logger.info(f"模式: {'快速模式' if args.fast else '精确模式(包含内容比较)'}")
-    
-    if not os.path.exists(args.source):
+      if not os.path.exists(args.source):
         logger.error(f"源目录不存在: {args.source}")
         return 1
     
-    copied, skipped = process_images(args.source, args.target, not args.fast)
+    copied, skipped, deleted = process_images(args.source, args.target, not args.fast)
     
     logger.info("=== 图片去重和整理工具完成 ===")
     logger.info(f"复制了 {copied} 张新图片")
     logger.info(f"跳过了 {skipped} 张重复图片")
+    logger.info(f"删除了 {deleted} 张重复文件")
     
     return 0
 
