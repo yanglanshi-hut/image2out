@@ -442,6 +442,7 @@ def main():
     parser.add_argument('--target', '-t', required=True, nargs='+', help='目标文件目录（可指定多个）')
     parser.add_argument('--fast', action='store_true', help='使用快速模式（仅文件哈希，不检测图片内容相似性）')
     parser.add_argument('--db', default='media_organizer.db', help='数据库文件路径（默认：media_organizer.db）')
+    parser.add_argument('--keep-db', action='store_true', help='保留数据库文件，不在完成后删除（用于调试或增量处理）')
     
     args = parser.parse_args()
     
@@ -454,6 +455,7 @@ def main():
         logger.info(f"目标目录: {', '.join(args.target)}")
         logger.info(f"模式: {'快速模式' if args.fast else '精确模式(包含图片内容比较)'}")
         logger.info(f"数据库文件: {args.db}")
+        logger.info(f"数据库保留: {'是' if args.keep_db else '否（完成后删除）'}")
         logger.info("文件分类规则:")
         logger.info("- 图片文件: 保存在主目录")
         logger.info("- 视频文件: 保存在 mp4/ 子目录")
@@ -491,19 +493,20 @@ def main():
         logger.info("=== 媒体文件去重和整理工具完成（优化版）===")
         logger.info(f"总计处理了 {total_copied} 个文件")
         logger.info(f"总计跳过了 {total_skipped} 个重复文件")
-        logger.info(f"总计删除了 {total_deleted} 个重复文件")
-        
+        logger.info(f"总计删除了 {total_deleted} 个重复文件")        
     finally:
         # 关闭数据库连接
         organizer.close_database()
         
-        # 可选：删除临时数据库文件
-        if os.path.exists(args.db):
+        # 根据用户选择决定是否删除数据库文件
+        if not args.keep_db and os.path.exists(args.db):
             try:
                 os.remove(args.db)
                 logger.info(f"已删除临时数据库文件: {args.db}")
             except Exception as e:
                 logger.warning(f"无法删除临时数据库文件 {args.db}: {e}")
+        elif args.keep_db and os.path.exists(args.db):
+            logger.info(f"数据库文件已保留: {args.db}")
     
     return 0
 
